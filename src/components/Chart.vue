@@ -4,7 +4,6 @@ import apexchart from 'vue3-apexcharts'
 import apiData from '../utils/data.ts'
 
 const result = ref(null)
-const series = ref([])
 const filteredSeries = ref([])
 const apexcharts = ref(null)
 
@@ -12,6 +11,10 @@ const props = defineProps({
   selected: {
     type: Number,
     default: 1
+  },
+  url: {
+    type: String,
+    default: ''
   }
 })
 
@@ -32,6 +35,9 @@ const chartOptions = ref({
   colors: ['#05AAE6'],
   xaxis: {
     categories: []
+  },
+  noData: {
+    text: 'Sem dados para esse filtro!'
   }
 })
 
@@ -53,7 +59,7 @@ const formatSeconds = (seconds) => {
   }
 }
 
-const filterDataByPeriod = (data, period) => {
+const filterDataByPeriod = (data, period, url) => {
   const latestDate = findLatestDate(data)
   const endDate = latestDate.toISOString().split('T')[0]
 
@@ -61,7 +67,12 @@ const filterDataByPeriod = (data, period) => {
     .toISOString()
     .split('T')[0]
 
-  return data.filter((item) => item.dateAccessed >= startDate && item.dateAccessed <= endDate)
+  if (url == '')
+    return data.filter((item) => item.dateAccessed >= startDate && item.dateAccessed <= endDate)
+  else
+    return data.filter(
+      (item) => item.dateAccessed >= startDate && item.dateAccessed <= endDate && item.url === url
+    )
 }
 
 const findLatestDate = (data) => {
@@ -75,11 +86,6 @@ const findLatestDate = (data) => {
   })
 
   return latestDate
-}
-
-const extractMonths = (dados) => {
-  const meses = [...new Set(dados.map((item) => parseInt(item.dateAccessed.split('-')[1])))].sort()
-  return meses
 }
 
 const getMonthName = (month) => {
@@ -125,7 +131,7 @@ const computeSeriesAndCategories = (data) => {
 const onMountedHandler = async () => {
   try {
     result.value = apiData
-    const filteredData = filterDataByPeriod(result.value, props.selected)
+    const filteredData = filterDataByPeriod(result.value, props.selected, props.url)
     let { series, months } = computeSeriesAndCategories(filteredData)
     const soma = series.map((entry) => entry.data.reduce((acc, curr) => acc + curr, 0))
     const sums = soma.map((value) => value / soma.length)
@@ -162,9 +168,9 @@ const onMountedHandler = async () => {
   }
 }
 
-const watchHandler = (newValue) => {
+const watchHandlerSelected = (newValue) => {
   if (result.value) {
-    const filteredData = filterDataByPeriod(result.value, newValue)
+    const filteredData = filterDataByPeriod(result.value, newValue[0], newValue[1])
     let { series, months } = computeSeriesAndCategories(filteredData)
     const soma = series.map((entry) => entry.data.reduce((acc, curr) => acc + curr, 0))
     const sums = soma.map((value) => value / soma.length)
@@ -187,7 +193,7 @@ const watchHandler = (newValue) => {
         }
       }
     }
-    if (newValue == 1 || newValue == 7) {
+    if (newValue[0] == 1 || newValue[0] == 7) {
       filteredSeries.value = [
         { name: 'Tempo de acesso', data: [sums[0], ...sums, sums[sums.length - 1]] }
       ]
@@ -203,7 +209,7 @@ const watchHandler = (newValue) => {
 }
 
 onMounted(onMountedHandler)
-watch(() => props.selected, watchHandler)
+watch(() => [props.selected, props.url], watchHandlerSelected)
 </script>
 
 <template>

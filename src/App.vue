@@ -1,11 +1,37 @@
 <script setup>
 import Chart from './components/Chart.vue'
-import { ref } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import apiData from './utils/data.ts'
 
 const selected = ref(1)
+const selectedUrl = ref('')
+const mediaAcessoPorSite = ref([])
 const activeClass = 'bg-blue-100 text-blue-400 rounded-md px-2 py-1 cursor-pointer font-semibold'
 const inactiveClass = 'bg-gray-100 text-gray-400 rounded-md px-2 py-1 cursor-pointer font-semibold'
+
+const findLatestDate = (data) => {
+  let latestDate = null
+
+  data.forEach((item) => {
+    const currentDate = new Date(item.dateAccessed)
+    if (currentDate > latestDate) {
+      latestDate = currentDate
+    }
+  })
+
+  return latestDate
+}
+
+const filterDataByPeriod = (dados, selected) => {
+  const latestDate = findLatestDate(dados)
+  const endDate = new Date(latestDate)
+  const startDate = new Date(endDate.getTime() - selected * 24 * 60 * 60 * 1000)
+
+  return dados.filter((item) => {
+    const currentDate = new Date(item.dateAccessed)
+    return currentDate >= startDate && currentDate <= endDate
+  })
+}
 
 const formatSeconds = (seconds) => {
   if (seconds < 60) {
@@ -25,15 +51,24 @@ const formatSeconds = (seconds) => {
   }
 }
 
+const uniqueUrls = computed(() => {
+  const urls = new Set()
+  const filteredData = filterDataByPeriod(apiData, selected.value)
+  filteredData.forEach((item) => urls.add(item.url))
+  return Array.from(urls)
+})
+
 const selectPeriod = (period) => {
   selected.value = period
 }
 
 const calcularMediaAcessoPorSite = (dados) => {
+  const filteredData = filterDataByPeriod(dados, selected.value)
+
   const somaTempoPorSite = {}
   const numAcessosPorSite = {}
 
-  dados.forEach((item) => {
+  filteredData.forEach((item) => {
     const { url, timeSpent } = item
     if (!somaTempoPorSite[url]) {
       somaTempoPorSite[url] = 0
@@ -57,7 +92,33 @@ const calcularMediaAcessoPorSite = (dados) => {
   return arrayMediaPorSite
 }
 
-const mediaAcessoPorSite = calcularMediaAcessoPorSite(apiData)
+const handleMount = () => {
+  const data = calcularMediaAcessoPorSite(apiData)
+  mediaAcessoPorSite.value = data
+}
+
+onMounted(handleMount)
+watch(selected, (newValue) => {
+  const filteredData = filterDataByPeriod(apiData, newValue)
+
+  const somaTempoPorSite = {}
+  const numAcessosPorSite = {}
+
+  filteredData.forEach((item) => {
+    const { url, timeSpent } = item
+    somaTempoPorSite[url] = (somaTempoPorSite[url] || 0) + timeSpent
+    numAcessosPorSite[url] = (numAcessosPorSite[url] || 0) + 1
+  })
+
+  const mediaPorSite = []
+
+  Object.keys(somaTempoPorSite).forEach((url) => {
+    const mediaTempo = somaTempoPorSite[url] / numAcessosPorSite[url]
+    mediaPorSite.push({ site: url, mediaTempoAcesso: mediaTempo })
+  })
+
+  mediaAcessoPorSite.value = mediaPorSite
+})
 </script>
 
 <template>
@@ -80,8 +141,10 @@ const mediaAcessoPorSite = calcularMediaAcessoPorSite(apiData)
           </div>
           <select
             class="border border-zinc-200 rounded-md px-8 py-1 font-semibold text-gray-500 mx-1"
+            v-model="selectedUrl"
           >
-            <option value="">Plano</option>
+            <option value="">Todos os sites</option>
+            <option v-for="url in uniqueUrls" :key="url" :value="url">{{ url }}</option>
           </select>
           <div class="flex items-center gap-2 text-gray-500 cursor-pointer">
             <span class="font-semibold">Exportar</span>
@@ -109,7 +172,7 @@ const mediaAcessoPorSite = calcularMediaAcessoPorSite(apiData)
       <span class="text-gray-500 text-sm">Veja a evolução de novos usuários</span>
 
       <div class="my-4">
-        <Chart :selected="selected" />
+        <Chart :selected="selected" :url="selectedUrl" />
       </div>
 
       <div class="flex flex-col mb-4">
@@ -117,11 +180,18 @@ const mediaAcessoPorSite = calcularMediaAcessoPorSite(apiData)
         <span class="text-gray-500 text-sm">Veja a média de acesso por website</span>
       </div>
 
-      <div v-for="(site, index) in mediaAcessoPorSite" :key="index" class="grid grid-cols-2 p-2">
-        <p class="px-2 py-1 rounded-md bg-zinc-100 text-zinc-500 font-semibold text-sm w-fit">
+      <div
+        v-for="(site, index) in mediaAcessoPorSite"
+        :key="index"
+        :class="selectedUrl == '' ? 'grid grid-cols-2 m-2' : 'grid grid-cols-2'"
+      >
+        <p
+          class="px-2 py-1 rounded-md bg-zinc-100 text-zinc-500 font-semibold text-sm w-fit"
+          v-show="selectedUrl === '' || site.site === selectedUrl"
+        >
           {{ site.site }}
         </p>
-        <p class="text-sm">
+        <p class="text-sm" v-show="selectedUrl === '' || site.site === selectedUrl">
           Média de tempo de acesso: <strong>{{ formatSeconds(site.mediaTempoAcesso) }}</strong>
         </p>
       </div>
